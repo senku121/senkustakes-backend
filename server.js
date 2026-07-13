@@ -27,9 +27,13 @@ require("./routes/platformWithdrawRoutes");
 
 
 const app = express();
-app.use(helmet());
+app.use(
+    helmet({
+        crossOriginResourcePolicy: false
+    })
+);
 
-
+app.options("*", cors());
 app.use(
     rateLimit({
 
@@ -39,16 +43,16 @@ app.use(
 
     })
 );
-app.use(
-    cors({
-        origin: [
-            "https://senkustakes.online",
-            "https://www.senkustakes.online",
-            "http://localhost:5500"
-        ],
-        credentials: true
-    })
-);
+app.use(cors({
+    origin: [
+        "http://127.0.0.1:5500",
+        "http://localhost:5500",
+        "https://senkustakes.online",
+        "https://www.senkustakes.online"
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    credentials: true
+}));
 
 app.use(express.json());
 
