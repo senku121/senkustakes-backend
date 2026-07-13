@@ -39,7 +39,16 @@ app.use(
 
     })
 );
-app.use(cors());
+app.use(
+    cors({
+        origin: [
+            "https://senkustakes.online",
+            "https://www.senkustakes.online",
+            "http://localhost:5500"
+        ],
+        credentials: true
+    })
+);
 
 app.use(express.json());
 
