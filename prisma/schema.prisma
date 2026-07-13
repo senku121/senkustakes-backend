@@ -1,0 +1,108 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+model Admin {
+  id                String             @id @default(cuid())
+  username          String             @unique
+  password          String
+  role              String
+  balance           Float              @default(0)
+  createdAt         DateTime           @default(now())
+  platformWithdraws PlatformWithdraw[]
+}
+
+model PlatformWithdraw {
+  id          String   @id @default(cuid())
+  adminId     String
+  amount      Float
+  method      String
+  destination String
+  holder      String
+  note        String?
+  status      String   @default("Completed")
+  createdAt   DateTime @default(now())
+  admin       Admin    @relation(fields: [adminId], references: [id])
+}
+
+model User {
+  id               String            @id @default(cuid())
+  username         String            @unique
+  email            String            @unique
+  password         String
+  firstName        String
+  lastName         String
+  phone            String?
+  country          String?
+  balance          Float             @default(0)
+  status           String            @default("ACTIVE")
+  createdAt        DateTime          @default(now())
+  deposited        Float             @default(0)
+  lockedBalance    Float             @default(0)
+  withdrawn        Float             @default(0)
+  emailVerified    Boolean           @default(false)
+  otp              String?
+  otpExpiry        DateTime?
+  resetOtp         String?
+resetOtpExpiry   DateTime?
+  transactions     Transaction[]
+  withdrawRequests WithdrawRequest[]
+  deposits         Deposit[]
+  resetVerified Boolean @default(false)
+}
+
+model Agent {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String
+  name      String
+  balance   Float    @default(0)
+  status    String   @default("ACTIVE")
+  createdAt DateTime @default(now())
+  role      String   @default("AGENT")
+}
+
+model Transaction {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  amount    Float
+  status    String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model WithdrawRequest {
+  id        String   @id @default(cuid())
+  userId    String
+  amount    Float
+  method    String
+  account   String
+  status    String   @default("Pending")
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model playing_with_neon {
+  id    Int    @id @default(autoincrement())
+  name  String
+  value Float? @db.Real
+}
+
+model Deposit {
+  id        String   @id @default(cuid())
+  userId    String
+  amount    Float
+  method    String
+  paymentId String?
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
