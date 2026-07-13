@@ -27,13 +27,14 @@ require("./routes/platformWithdrawRoutes");
 
 
 const app = express();
+app.set("trust proxy", 1);
 app.use(
     helmet({
         crossOriginResourcePolicy: false
     })
 );
 
-app.options("*", cors());
+
 app.use(
     rateLimit({
 
