@@ -11,7 +11,7 @@ router.get("/", async (req,res)=>{
 
         await sendMail({
 
-            to: process.env.MAIL_USER,
+            to: "business@senkustakes.online",
 
             subject:"Senku Stakes Email Test",
 
