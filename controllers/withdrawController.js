@@ -1,28 +1,45 @@
+/*==================================================
+                SENKU PAY
+        WITHDRAW CONTROLLER
+==================================================*/
+
 const { PrismaClient } = require("@prisma/client");
 
 const prisma = new PrismaClient();
 
-/*================================
+/*==================================
         CREATE WITHDRAW
-================================*/
+==================================*/
 
 exports.createWithdraw = async (req, res) => {
 
     try {
 
-        const userId = req.user.id;
-
         const {
 
             amount,
+
             method,
+
             account
 
         } = req.body;
 
-        if (!amount || amount <= 0) {
+        const withdrawAmount = Number(amount);
+
+        if (
+
+            isNaN(withdrawAmount)
+
+            ||
+
+            withdrawAmount <= 0
+
+        ) {
 
             return res.status(400).json({
+
+                success: false,
 
                 message: "Invalid withdrawal amount."
 
@@ -34,7 +51,7 @@ exports.createWithdraw = async (req, res) => {
 
             where: {
 
-                id: userId
+                id: req.user.id
 
             }
 
@@ -44,15 +61,27 @@ exports.createWithdraw = async (req, res) => {
 
             return res.status(404).json({
 
+                success: false,
+
                 message: "User not found."
 
             });
 
         }
 
-        if (user.balance < amount) {
+        if (
+
+            Number(user.balance)
+
+            <
+
+            withdrawAmount
+
+        ) {
 
             return res.status(400).json({
+
+                success: false,
 
                 message: "Insufficient balance."
 
@@ -60,67 +89,73 @@ exports.createWithdraw = async (req, res) => {
 
         }
 
-        await prisma.user.update({
+        await prisma.$transaction([
 
-            where: {
+            prisma.user.update({
 
-                id: userId
+                where: {
 
-            },
-
-            data: {
-
-                balance: {
-
-                    decrement: amount
+                    id: req.user.id
 
                 },
 
-                lockedBalance: {
+                data: {
 
-                    increment: amount
+                    balance: {
+
+                        decrement: withdrawAmount
+
+                    },
+
+                    lockedBalance: {
+
+                        increment: withdrawAmount
+
+                    }
 
                 }
 
-            }
+            }),
 
-        });
+            prisma.withdrawRequest.create({
 
-        await prisma.withdrawRequest.create({
+                data: {
 
-            data: {
+                    userId: req.user.id,
 
-                userId,
+                    amount: withdrawAmount,
 
-                amount,
+                    method,
 
-                method,
+                    account,
 
-                account,
+                    status: "Pending"
 
-                status: "Pending"
+                }
 
-            }
+            }),
 
-        });
+            prisma.transaction.create({
 
-        await prisma.transaction.create({
+                data: {
 
-            data: {
+                    userId: req.user.id,
 
-                userId,
+                    type: "Withdrawal",
 
-                type: "Withdrawal",
+                    amount: withdrawAmount,
 
-                amount,
+                    status: "Pending"
 
-                status: "Pending"
+                }
 
-            }
+            })
 
-        });
+        ]);
 
-        res.json({
+        return res.status(201).json({
+
+            success: true,
 
             message: "Withdrawal request submitted."
 
@@ -128,13 +163,15 @@ exports.createWithdraw = async (req, res) => {
 
     }
 
-    catch (err) {
+    catch (error) {
 
-        console.log(err);
+        console.error(error);
 
-        res.status(500).json({
+        return res.status(500).json({
 
-            message: "Server error."
+            success: false,
+
+            message: "Unable to create withdrawal."
 
         });
 
@@ -142,41 +179,51 @@ exports.createWithdraw = async (req, res) => {
 
 };
 
-/*================================
+/*==================================
         GET USER WITHDRAWALS
-================================*/
+==================================*/
 
 exports.getWithdraws = async (req, res) => {
 
     try {
 
-        const withdrawals = await prisma.withdrawRequest.findMany({
+        const withdrawals =
 
-            where: {
+            await prisma.withdrawRequest.findMany({
 
-                userId: req.user.id
+                where: {
 
-            },
+                    userId: req.user.id
 
-            orderBy: {
+                },
 
-                createdAt: "desc"
+                orderBy: {
 
-            }
+                    createdAt: "desc"
+
+                }
+
+            });
+
+        return res.status(200).json({
+
+            success: true,
+
+            withdrawals
 
         });
 
-        res.json(withdrawals);
-
     }
 
-    catch (err) {
+    catch (error) {
 
-        console.log(err);
+        console.error(error);
 
-        res.status(500).json({
+        return res.status(500).json({
 
-            message: "Server error."
+            success: false,
+
+            message: "Unable to load withdrawals."
 
         });
 

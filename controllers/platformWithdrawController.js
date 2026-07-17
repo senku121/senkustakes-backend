@@ -1,10 +1,15 @@
+/*==================================================
+                SENKU PAY
+    PLATFORM WITHDRAW CONTROLLER
+==================================================*/
+
 const { PrismaClient } = require("@prisma/client");
 
 const prisma = new PrismaClient();
 
-/*================================
-        GET PLATFORM DATA
-================================*/
+/*==================================
+        PLATFORM SUMMARY
+==================================*/
 
 exports.getPlatformWithdraw = async (req, res) => {
 
@@ -16,44 +21,76 @@ exports.getPlatformWithdraw = async (req, res) => {
 
             return res.status(404).json({
 
-                message: "Admin not found."
+                success:false,
+
+                message:"Platform account not found."
 
             });
 
         }
 
-        const history = await prisma.platformWithdraw.findMany({
+        const history =
+        await prisma.platformWithdraw.findMany({
 
-            orderBy: {
-
-                createdAt: "desc"
-
+            orderBy:{
+                createdAt:"desc"
             }
 
         });
 
         const today = new Date();
-        today.setHours(0,0,0,0);
 
-        const todayWithdraw = history
-            .filter(w => new Date(w.createdAt) >= today)
-            .reduce((sum,w)=>sum+w.amount,0);
-
-        const totalWithdraw = history.reduce(
-
-            (sum,w)=>sum+w.amount,
-
-            0
-
+        today.setHours(
+            0,0,0,0
         );
 
-        res.json({
+        const todayWithdraw =
 
-            balance: admin.balance,
+            history
 
-            todayWithdraw,
+            .filter(
 
-            totalWithdraw,
+                item=>
+
+                new Date(item.createdAt)>=today
+
+            )
+
+            .reduce(
+
+                (sum,item)=>
+
+                sum+Number(item.amount),
+
+                0
+
+            );
+
+        const totalWithdraw =
+
+            history.reduce(
+
+                (sum,item)=>
+
+                sum+Number(item.amount),
+
+                0
+
+            );
+
+        return res.status(200).json({
+
+            success:true,
+
+            platform:{
+
+                balance:Number(admin.balance),
+
+                todayWithdraw,
+
+                totalWithdraw
+
+            },
 
             history
 
@@ -61,13 +98,15 @@ exports.getPlatformWithdraw = async (req, res) => {
 
     }
 
-    catch(err){
+    catch(error){
 
-        console.log(err);
+        console.error(error);
 
-        res.status(500).json({
+        return res.status(500).json({
 
-            message:"Server error."
+            success:false,
+
+            message:"Unable to load platform withdrawals."
 
         });
 
@@ -76,10 +115,9 @@ exports.getPlatformWithdraw = async (req, res) => {
 };
 
 
-
-/*================================
+/*==================================
         CREATE PLATFORM WITHDRAW
-================================*/
+==================================*/
 
 exports.createPlatformWithdraw = async (req,res)=>{
 
@@ -88,38 +126,68 @@ exports.createPlatformWithdraw = async (req,res)=>{
         const {
 
             amount,
+
             method,
+
             destination,
+
             holder,
+
             note
 
         } = req.body;
 
-        if(!amount || amount<=0){
+        const withdrawAmount =
+        Number(amount);
+
+        if(
+
+            isNaN(withdrawAmount)
+
+            ||
+
+            withdrawAmount<=0
+
+        ){
 
             return res.status(400).json({
 
-                message:"Invalid amount."
+                success:false,
+
+                message:"Invalid withdrawal amount."
 
             });
 
         }
 
-        const admin = await prisma.admin.findFirst();
+        const admin =
+        await prisma.admin.findFirst();
 
         if(!admin){
 
             return res.status(404).json({
 
-                message:"Admin not found."
+                success:false,
+
+                message:"Platform account not found."
 
             });
 
         }
 
-        if(admin.balance < amount){
+        if(
+
+            Number(admin.balance)
+
+            <
+
+            withdrawAmount
+
+        ){
 
             return res.status(400).json({
+
+                success:false,
 
                 message:"Insufficient platform balance."
 
@@ -127,57 +195,75 @@ exports.createPlatformWithdraw = async (req,res)=>{
 
         }
 
-        await prisma.admin.update({
+        await prisma.$transaction([
 
-            where:{
-                id:admin.id
-            },
+            prisma.admin.update({
 
-            data:{
+                where:{
+                    id:admin.id
+                },
 
-                balance:{
-                    decrement:Number(amount)
+                data:{
+
+                    balance:{
+                        decrement:withdrawAmount
+                    }
+
                 }
 
-            }
+            }),
 
-        });
+            prisma.platformWithdraw.create({
 
-        await prisma.platformWithdraw.create({
+    data: {
 
-            data:{
+        adminId: admin.id,
 
-                amount:Number(amount),
+        amount: withdrawAmount,
 
-                method,
+        method: String(
+            method || "Manual"
+        ).trim(),
 
-                destination,
+        destination: String(
+            destination || ""
+        ).trim(),
 
-                holder,
+        holder: String(
+            holder || ""
+        ).trim(),
 
-                note,
+        note: note
+            ? String(note).trim()
+            : null,
 
-                status:"Completed"
+        status: "Completed"
 
-            }
+    }
 
-        });
+})
 
-        res.json({
+        ]);
 
-            message:"Platform withdrawal completed."
+        return res.status(201).json({
+
+            success:true,
+
+            message:"Platform withdrawal completed successfully."
 
         });
 
     }
 
-    catch(err){
+    catch(error){
 
-        console.log(err);
+        console.error(error);
 
-        res.status(500).json({
+        return res.status(500).json({
 
-            message:"Server error."
+            success:false,
+
+            message:"Unable to complete platform withdrawal."
 
         });
 

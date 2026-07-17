@@ -74,7 +74,7 @@ exports.register = async (req, res) => {
 
         await sendOTPEmail(email,otp);
 
-        res.json({
+        return res.status(200).json({
 
             success:true,
             message:"Verification code sent to your email."
@@ -168,13 +168,15 @@ exports.login = async (req, res) => {
 
             {
 
-                expiresIn: "7d"
+                expiresIn: "7d",
+issuer: "senku-pay-api",
+audience: "senku-pay-user"
 
             }
 
         );
 
-        res.json({
+        return res.status(200).json({
 
             message: "Login successful",
 
@@ -321,13 +323,15 @@ exports.adminLogin = async (req, res) => {
 
             {
 
-                expiresIn: "7d"
+                expiresIn: "7d",
+issuer: "senku-pay-api",
+audience: "senku-pay-admin"
 
             }
 
         );
 
-        res.json({
+        return res.status(200).json({
 
             message: "Admin login successful",
 
@@ -393,7 +397,7 @@ exports.verifyEmail = async (req, res) => {
 
         if (user.emailVerified) {
 
-            return res.json({
+            return res.status(200).json({
 
                 message: "Email already verified."
 
@@ -441,7 +445,7 @@ exports.verifyEmail = async (req, res) => {
 
         });
 
-        res.json({
+        return res.status(200).json({
 
             message: "Email verified successfully."
 
@@ -520,11 +524,15 @@ exports.resendOTP = async (req, res) => {
 
         await sendOTPEmail(email, otp);
 
-        res.json({
+        return res.status(201).json({
 
-            message: "Verification code sent."
+    success:true,
 
-        });
+    message:"Verification code sent successfully.",
+
+    email
+
+});
 
     }
 
@@ -587,7 +595,7 @@ exports.forgotPassword = async (req, res) => {
 
         await sendOTPEmail(email, otp);
 
-        res.json({
+        return res.status(200).json({
 
             message: "OTP sent successfully."
 
@@ -654,7 +662,7 @@ exports.verifyResetOTP = async (req, res) => {
 
         }
 
-        res.json({
+        return res.status(200).json({
 
             message: "OTP verified."
 
@@ -734,7 +742,7 @@ exports.resetPassword = async (req, res) => {
 
         });
 
-        res.json({
+        return res.status(200).json({
 
             message: "Password updated successfully."
 

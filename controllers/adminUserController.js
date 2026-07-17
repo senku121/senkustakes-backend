@@ -1,55 +1,65 @@
+/*==================================================
+                SENKU PAY
+        ADMIN USER CONTROLLER
+==================================================*/
+
 const { PrismaClient } = require("@prisma/client");
+const bcrypt = require("bcrypt");
 
 const prisma = new PrismaClient();
 
+/*==================================
+        GET USERS
+==================================*/
 
-/*================================
-        GET ALL USERS
-================================*/
+exports.getUsers = async (req, res) => {
 
-exports.getUsers = async (req,res)=>{
+    try {
 
-    try{
+        const users = await prisma.user.findMany({
 
-        const users =
-        await prisma.user.findMany({
-
-            orderBy:{
-                createdAt:"desc"
+            orderBy: {
+                createdAt: "desc"
             },
 
-            select:{
+            select: {
 
-                id:true,
-                username:true,
-                email:true,
+                id: true,
+                username: true,
+                email: true,
 
-                balance:true,
-                deposited:true,
-                withdrawn:true,
-                lockedBalance:true,
+                balance: true,
+                deposited: true,
+                withdrawn: true,
+                lockedBalance: true,
 
-                status:true,
+                status: true,
 
-                createdAt:true
+                createdAt: true
 
             }
 
         });
 
+        return res.status(200).json({
 
-        res.json(users);
+            success: true,
 
+            users
+
+        });
 
     }
 
-    catch(err){
+    catch (error) {
 
-        console.log(err);
+        console.error(error);
 
-        res.status(500).json({
+        return res.status(500).json({
 
-            message:"Server error"
+            success: false,
+
+            message: "Unable to load users."
 
         });
 
@@ -57,388 +67,605 @@ exports.getUsers = async (req,res)=>{
 
 };
 
-/*================================
+
+/*==================================
         ADD BALANCE
-================================*/
+==================================*/
 
-exports.addBalance = async(req,res)=>{
+exports.addBalance = async (req, res) => {
 
-try{
+    try {
 
-const {id}=req.params;
+        const { id } = req.params;
 
-const {amount}=req.body;
-const admin = await prisma.admin.findFirst();
+        const amount = Number(req.body.amount);
 
+        if (amount <= 0) {
 
-if(!admin){
+            return res.status(400).json({
 
-return res.status(404).json({
-message:"Admin account not found"
-});
+                success: false,
 
-}
+                message: "Invalid amount."
 
-if(admin.balance < Number(amount)){
+            });
 
-return res.status(400).json({
-message:"Insufficient platform balance"
-});
+        }
 
-}
+        const admin = await prisma.admin.findFirst();
 
+        const user = await prisma.user.findUnique({
 
-const user = await prisma.user.findUnique({
-    
+            where: { id }
 
-where:{id}
+        });
 
-});
+        if (!admin) {
 
+            return res.status(404).json({
 
+                success: false,
 
+                message: "Platform account not found."
 
+            });
 
+        }
 
-if(!user){
+        if (!user) {
 
-return res.status(404).json({
-message:"User not found"
-});
+            return res.status(404).json({
 
-}
+                success: false,
 
+                message: "User not found."
 
-await prisma.user.update({
+            });
 
-where:{id},
+        }
 
-data:{
-balance:{
-increment:Number(amount)
-}
-}
+        if (Number(admin.balance) < amount) {
 
-});
+            return res.status(400).json({
 
-await prisma.admin.update({
+                success: false,
 
-where:{
-id:admin.id
-},
+                message: "Platform balance is insufficient."
 
-data:{
-balance:{
-decrement:Number(amount)
-}
+            });
 
-}
+        }
 
-});
+        await prisma.$transaction([
 
+            prisma.user.update({
 
-res.json({
-message:"Balance added successfully"
-});
+                where: { id },
 
+                data: {
 
-}
+                    balance: {
 
-catch(err){
+                        increment: amount
 
-console.log(err);
+                    }
 
-res.status(500).json({
-message:"Server error"
-});
+                }
 
-}
+            }),
+
+            prisma.admin.update({
+
+                where: {
+
+                    id: admin.id
+
+                },
+
+                data: {
+
+                    balance: {
+
+                        decrement: amount
+
+                    }
+
+                }
+
+            })
+
+        ]);
+
+        return res.status(200).json({
+
+            success: true,
+
+            message: "Balance added successfully."
+
+        });
+
+    }
+
+    catch (error) {
+
+        console.error(error);
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "Unable to add balance."
+
+        });
+
+    }
 
 };
 
 
-
-
+/*==================================
+        DEDUCT BALANCE
+==================================*/
 
 /*================================
         DEDUCT BALANCE
 ================================*/
 
+exports.deductBalance = async (req, res) => {
 
-exports.deductBalance = async(req,res)=>{
+    try {
 
-try{
+        const { id } = req.params;
 
-const {id}=req.params;
-
-const {amount}=req.body;
-
-
-const user = await prisma.user.findUnique({
-
-where:{id}
-
-});
-
-if(!user){
-
-return res.status(404).json({
-message:"User not found"
-});
-
-}
-
-if(user.balance < Number(amount)){
-
-return res.status(400).json({
-message:"User doesn't have enough balance"
-});
-
-}
+        const amount = Number(req.body.amount);
 
 
+        /*================================
+                VALIDATE AMOUNT
+        ================================*/
 
-let newBalance =
-user.balance - Number(amount);
+        if (
+            !Number.isFinite(amount) ||
+            amount <= 0
+        ) {
 
+            return res.status(400).json({
 
+                success: false,
 
-if(newBalance < 0)
-newBalance=0;
+                message: "Enter a valid amount."
 
+            });
 
-
-await prisma.user.update({
-
-where:{id},
-
-data:{
-    balance:newBalance
-}
-
-});
+        }
 
 
-const admin = await prisma.admin.findFirst();
+        /*================================
+              LOAD USER AND ADMIN
+        ================================*/
 
-await prisma.admin.update({
+        const [user, admin] =
+            await Promise.all([
 
-where:{
-id:admin.id
-},
+                prisma.user.findUnique({
 
-data:{
-balance:{
-increment:Number(amount)
-}
+                    where: {
+                        id
+                    }
 
-}
+                }),
 
-});
+                prisma.admin.findFirst({
 
-res.json({
-message:"Balance deducted successfully"
-});
+                    where: {
+                        status: "ACTIVE"
+                    }
+
+                })
+
+            ]);
 
 
-}
+        if (!user) {
 
-catch(err){
+            return res.status(404).json({
 
-console.log(err);
+                success: false,
 
-res.status(500).json({
-message:"Server error"
-});
+                message: "User not found."
 
-}
+            });
+
+        }
+
+
+        if (!admin) {
+
+            return res.status(404).json({
+
+                success: false,
+
+                message: "Active admin account not found."
+
+            });
+
+        }
+
+
+        if (Number(user.balance) < amount) {
+
+            return res.status(400).json({
+
+                success: false,
+
+                message: "User doesn't have enough balance."
+
+            });
+
+        }
+
+
+        /*================================
+          DEDUCT USER + CREDIT PLATFORM
+
+          Everything succeeds together,
+          or everything is rolled back.
+        ================================*/
+
+        const result =
+            await prisma.$transaction(async (tx) => {
+
+                /*
+                 * Conditional update prevents the
+                 * balance from becoming negative if
+                 * two requests happen simultaneously.
+                 */
+
+                const deduction =
+                    await tx.user.updateMany({
+
+                        where: {
+
+                            id,
+
+                            balance: {
+                                gte: amount
+                            }
+
+                        },
+
+                        data: {
+
+                            balance: {
+                                decrement: amount
+                            }
+
+                        }
+
+                    });
+
+
+                if (deduction.count !== 1) {
+
+                    throw new Error(
+                        "INSUFFICIENT_USER_BALANCE"
+                    );
+
+                }
+
+
+                const updatedAdmin =
+                    await tx.admin.update({
+
+                        where: {
+                            id: admin.id
+                        },
+
+                        data: {
+
+                            balance: {
+                                increment: amount
+                            }
+
+                        },
+
+                        select: {
+
+                            id: true,
+                            balance: true
+
+                        }
+
+                    });
+
+
+                const transaction =
+                    await tx.transaction.create({
+
+                        data: {
+
+                            userId: id,
+
+                            type: "Admin Deducted Balance",
+
+                            amount: -amount,
+
+                            status: "Completed",
+
+                            reference:
+                                `ADMIN-DEDUCT-${Date.now()}`,
+
+                            note:
+                                "Balance deducted by admin and returned to platform balance."
+
+                        }
+
+                    });
+
+
+                const updatedUser =
+                    await tx.user.findUnique({
+
+                        where: {
+                            id
+                        },
+
+                        select: {
+
+                            id: true,
+                            username: true,
+                            balance: true
+
+                        }
+
+                    });
+
+
+                return {
+
+                    user: updatedUser,
+
+                    admin: updatedAdmin,
+
+                    transaction
+
+                };
+
+            });
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            message:
+                "Balance deducted and added to platform balance successfully.",
+
+            deductedAmount:
+                amount,
+
+            userBalance:
+                result.user.balance,
+
+            platformBalance:
+                result.admin.balance,
+
+            transactionId:
+                result.transaction.id
+
+        });
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Admin deduct balance error:",
+            error
+        );
+
+
+        if (
+            error.message ===
+            "INSUFFICIENT_USER_BALANCE"
+        ) {
+
+            return res.status(400).json({
+
+                success: false,
+
+                message:
+                    "User doesn't have enough balance."
+
+            });
+
+        }
+
+
+        return res.status(500).json({
+
+            success: false,
+
+            message:
+                "Unable to deduct the user's balance."
+
+        });
+
+    }
 
 };
 
 
+/*==================================
+        USER STATUS
+==================================*/
 
+exports.updateUserStatus = async (req, res) => {
 
+    try {
 
-/*================================
-        CHANGE STATUS
-================================*/
+        const { id } = req.params;
 
+        const status = String(req.body.status || "").trim();
 
-exports.updateUserStatus = async(req,res)=>{
+        await prisma.user.update({
 
-try{
+            where: { id },
 
-const {id}=req.params;
+            data: {
 
-const {status}=req.body;
+                status
 
+            }
 
-const user = await prisma.user.findUnique({
+        });
 
-where:{id}
+        return res.status(200).json({
 
-});
+            success: true,
 
+            message: "User status updated."
 
-if(!user){
+        });
 
-return res.status(404).json({
+    }
 
-message:"User not found"
+    catch (error) {
 
-});
+        console.error(error);
 
-}
+        return res.status(500).json({
 
+            success: false,
 
+            message: "Unable to update user."
 
-await prisma.user.update({
+        });
 
-where:{id},
-
-data:{
-status
-}
-
-});
-
-
-res.json({
-
-message:"User status updated"
-
-});
-
-
-}
-
-
-catch(err){
-
-console.log(err);
-
-res.status(500).json({
-
-message:"Server error"
-
-});
-
-}
+    }
 
 };
 
 
-
-
-
-/*================================
+/*==================================
         RESET PASSWORD
-================================*/
+==================================*/
 
+exports.resetPassword = async (req, res) => {
 
-exports.resetPassword = async(req,res)=>{
+    try {
 
-try{
+        const { id } = req.params;
 
+        const password = String(req.body.password || "");
 
-const bcrypt=require("bcrypt");
+        if (password.length < 6) {
 
+            return res.status(400).json({
 
-const {id}=req.params;
+                success: false,
 
-const {password}=req.body;
+                message: "Password must contain at least 6 characters."
 
+            });
 
+        }
 
-const hash =
-await bcrypt.hash(password,10);
+        const hash = await bcrypt.hash(
 
+            password,
 
+            12
 
-await prisma.user.update({
+        );
 
-where:{id},
+        await prisma.user.update({
 
-data:{
-password:hash
-}
+            where: { id },
 
-});
+            data: {
 
+                password: hash
 
+            }
 
-res.json({
+        });
 
-message:"Password reset successfully"
+        return res.status(200).json({
 
-});
+            success: true,
 
+            message: "Password reset successfully."
 
-}
+        });
 
+    }
 
-catch(err){
+    catch (error) {
 
-console.log(err);
+        console.error(error);
 
-res.status(500).json({
+        return res.status(500).json({
 
-message:"Server error"
+            success: false,
 
-});
+            message: "Unable to reset password."
 
-}
+        });
 
+    }
 
 };
 
 
+/*==================================
+        USER TRANSACTIONS
+==================================*/
 
+exports.getUserTransactions = async (req, res) => {
 
+    try {
 
-/*================================
-        TRANSACTION HISTORY
-================================*/
+        const transactions =
 
+            await prisma.transaction.findMany({
 
-exports.getUserTransactions = async(req,res)=>{
+                where: {
 
+                    userId: req.params.id
 
-try{
+                },
 
+                orderBy: {
 
-const transactions =
-await prisma.transaction.findMany({
+                    createdAt: "desc"
 
-where:{
-userId:req.params.id
-},
+                }
 
-orderBy:{
-createdAt:"desc"
-}
+            });
 
-});
+        return res.status(200).json({
 
+            success: true,
 
-res.json(transactions);
+            transactions
 
+        });
 
-}
+    }
 
-catch(err){
+    catch (error) {
 
-console.log(err);
+        console.error(error);
 
+        return res.status(500).json({
 
-res.status(500).json({
+            success: false,
 
-message:"Server error"
+            message: "Unable to load transactions."
 
-});
+        });
 
-
-}
-
+    }
 
 };

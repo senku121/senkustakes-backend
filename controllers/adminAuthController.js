@@ -1,63 +1,163 @@
-const { PrismaClient } = require("@prisma/client");
+/*==================================================
+                SENKU PAY
+          ADMIN AUTH CONTROLLER
+==================================================*/
+
+const {
+    PrismaClient
+} = require("@prisma/client");
+
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
 const prisma = new PrismaClient();
 
+
+/*==================================
+        ADMIN LOGIN
+==================================*/
+
 exports.login = async (req, res) => {
 
     try {
 
-        const { username, password } = req.body;
+        const username =
+            String(
+                req.body.username || ""
+            )
+            .trim()
+            .toLowerCase();
 
-        const admin = await prisma.admin.findUnique({
-            where: { username }
-        });
+        const password =
+            String(
+                req.body.password || ""
+            );
+
+        if (!username || !password) {
+
+            return res.status(400).json({
+                success: false,
+                message:
+                    "Username and password are required."
+            });
+
+        }
+
+        if (!process.env.JWT_SECRET) {
+
+            console.error(
+                "JWT_SECRET is missing."
+            );
+
+            return res.status(500).json({
+                success: false,
+                message:
+                    "Server authentication is not configured."
+            });
+
+        }
+
+        const admin =
+            await prisma.admin.findUnique({
+
+                where: {
+                    username
+                }
+
+            });
 
         if (!admin) {
+
             return res.status(401).json({
-                message: "Invalid username or password"
+                success: false,
+                message:
+                    "Invalid username or password."
             });
+
         }
 
-        const valid = await bcrypt.compare(
-            password,
-            admin.password
-        );
+        if (
+            admin.status &&
+            String(admin.status)
+                .toUpperCase() !== "ACTIVE"
+        ) {
 
-        if (!valid) {
-            return res.status(401).json({
-                message: "Invalid username or password"
+            return res.status(403).json({
+                success: false,
+                message:
+                    "This administrator account is disabled."
             });
+
         }
 
-        const token = jwt.sign(
-            {
-                id: admin.id,
-                username: admin.username,
-                role: admin.role
-            },
-            process.env.JWT_SECRET,
-            {
-                expiresIn: "7d"
-            }
-        );
+        const validPassword =
+            await bcrypt.compare(
+                password,
+                admin.password
+            );
 
-        res.json({
+        if (!validPassword) {
+
+            return res.status(401).json({
+                success: false,
+                message:
+                    "Invalid username or password."
+            });
+
+        }
+
+        const token =
+            jwt.sign(
+
+                {
+                    id: admin.id,
+                    username: admin.username,
+                    role:
+                        admin.role ||
+                        "SUPER_ADMIN",
+                    type: "ADMIN"
+                },
+
+                process.env.JWT_SECRET,
+
+                {
+                    expiresIn: "7d",
+                    issuer: "senku-pay-api",
+                    audience: "senku-pay-admin"
+                }
+
+            );
+
+        return res.status(200).json({
+
+            success: true,
+
+            message:
+                "Administrator login successful.",
+
             token,
+
             admin: {
                 id: admin.id,
                 username: admin.username,
-                role: admin.role
+                role:
+                    admin.role ||
+                    "SUPER_ADMIN"
             }
+
         });
 
-    } catch (err) {
+    } catch (error) {
 
-        console.log(err);
+        console.error(
+            "Administrator login error:",
+            error
+        );
 
-        res.status(500).json({
-            message: "Server error"
+        return res.status(500).json({
+            success: false,
+            message:
+                "Unable to complete administrator login."
         });
 
     }

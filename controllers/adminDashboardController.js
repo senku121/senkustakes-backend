@@ -1,101 +1,157 @@
+/*==================================================
+                SENKU PAY
+        ADMIN DASHBOARD CONTROLLER
+==================================================*/
+
 const { PrismaClient } = require("@prisma/client");
 
 const prisma = new PrismaClient();
 
+/*==================================
+        DASHBOARD
+==================================*/
 
-exports.getDashboard = async (req,res)=>{
+exports.getDashboard = async (req, res) => {
 
-    try{
+    try {
 
+        const [
 
-        const totalUsers =
-        await prisma.user.count();
+            totalUsers,
 
+            totalAgents,
 
+            totalTransactions,
 
-        const users =
-        await prisma.user.findMany({
+            users,
 
-            select:{
-                balance:true
-            }
+            pendingWithdraw,
 
-        });
+            completedDeposits,
 
+            completedWithdraws
 
+        ] = await Promise.all([
 
-        const totalBalance =
-        users.reduce(
+            prisma.user.count(),
 
-            (sum,user)=>
-            sum + user.balance,
+            prisma.agent.count(),
+
+            prisma.transaction.count(),
+
+            prisma.user.findMany({
+
+                select: {
+                    balance: true
+                }
+
+            }),
+
+            prisma.withdrawRequest.aggregate({
+
+                _sum: {
+                    amount: true
+                },
+
+                where: {
+                    status: "Pending"
+                }
+
+            }),
+
+            prisma.transaction.aggregate({
+
+                _sum: {
+                    amount: true
+                },
+
+                where: {
+
+                    type: "Deposit",
+
+                    status: "Completed"
+
+                }
+
+            }),
+
+            prisma.transaction.aggregate({
+
+                _sum: {
+                    amount: true
+                },
+
+                where: {
+
+                    type: "Withdraw",
+
+                    status: "Completed"
+
+                }
+
+            })
+
+        ]);
+
+        const totalBalance = users.reduce(
+
+            (sum, user) =>
+
+                sum + Number(user.balance || 0),
 
             0
 
         );
 
+        res.status(200).json({
 
+            success: true,
 
-        const pendingWithdraw =
-        await prisma.withdrawRequest.aggregate({
+            dashboard: {
 
-            _sum:{
-                amount:true
-            },
+                totalUsers,
 
-            where:{
-                status:"Pending"
-            }
+                totalAgents,
 
-        });
+                totalTransactions,
 
+                totalBalance,
 
+                pendingWithdraw:
 
-        const depositsToday =
-        await prisma.transaction.aggregate({
+                    pendingWithdraw._sum.amount || 0,
 
-            _sum:{
-                amount:true
-            },
+                totalDeposits:
 
-            where:{
+                    completedDeposits._sum.amount || 0,
 
-                type:"Deposit",
+                totalWithdraws:
 
-                status:"Completed"
+                    completedWithdraws._sum.amount || 0
 
             }
 
         });
-
-
-
-        res.json({
-
-            totalUsers,
-
-            totalBalance,
-
-            pendingWithdraw:
-            pendingWithdraw._sum.amount || 0,
-
-
-            todayDeposits:
-            depositsToday._sum.amount || 0
-
-        });
-
 
     }
 
+    catch (error) {
 
-    catch(error){
+        console.error(
 
-        console.log(error);
+            "Dashboard error:",
+
+            error
+
+        );
 
         res.status(500).json({
 
-            message:"Server error"
+            success: false,
+
+            message:
+
+                "Unable to load dashboard."
 
         });
 

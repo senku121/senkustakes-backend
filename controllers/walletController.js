@@ -1,67 +1,88 @@
+/*==================================================
+                SENKU PAY
+            WALLET CONTROLLER
+==================================================*/
+
 const { PrismaClient } = require("@prisma/client");
 
 const prisma = new PrismaClient();
 
+/*==================================
+        GET WALLET
+==================================*/
 
-exports.getWallet = async (req,res)=>{
+exports.getWallet = async (req, res) => {
 
-    try{
-
+    try {
 
         const user = await prisma.user.findUnique({
 
-            where:{
-                id:req.user.id
+            where: {
+
+                id: req.user.id
+
             },
 
-            select:{
+            select: {
 
-                username:true,
+                id: true,
 
-                email:true,
+                username: true,
 
-                firstName:true,
+                email: true,
 
-                lastName:true,
+                firstName: true,
 
-                balance:true,
+                lastName: true,
+                emailVerified: true,
 
-                deposited:true,
+                balance: true,
 
-                withdrawn:true,
+                deposited: true,
 
-                lockedBalance:true,
+                withdrawn: true,
 
-                status:true
+                lockedBalance: true,
+
+                status: true,
+
+                createdAt: true
 
             }
 
         });
 
-
-        if(!user){
+        if (!user) {
 
             return res.status(404).json({
 
-                message:"User not found"
+                success: false,
+
+                message: "User not found."
 
             });
 
         }
 
+        return res.status(200).json({
 
-        res.json(user);
+            success: true,
 
+            wallet: user
+
+        });
 
     }
-    catch(error){
 
-        console.log(error);
+    catch (error) {
 
+        console.error(error);
 
-        res.status(500).json({
+        return res.status(500).json({
 
-            message:"Server error"
+            success: false,
+
+            message: "Unable to load wallet."
 
         });
 

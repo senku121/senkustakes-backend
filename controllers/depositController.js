@@ -1,62 +1,85 @@
+/*==================================================
+                SENKU PAY
+          DEPOSIT CONTROLLER
+==================================================*/
+
 const { PrismaClient } = require("@prisma/client");
 
 const prisma = new PrismaClient();
 
+/*==================================
+        CREATE DEPOSIT
+==================================*/
 
-// CREATE DEPOSIT REQUEST
+exports.createDeposit = async (req, res) => {
 
-exports.createDeposit = async (req,res)=>{
+    try {
 
-    try{
+        const {
 
-        const { amount, method } = req.body;
+            amount,
 
+            method
 
-        if(!amount || amount <= 0){
+        } = req.body;
+
+        const depositAmount = Number(amount);
+
+        if (
+
+            isNaN(depositAmount) ||
+
+            depositAmount <= 0
+
+        ) {
 
             return res.status(400).json({
 
-                message:"Invalid amount"
+                success: false,
+
+                message: "Invalid deposit amount."
 
             });
 
         }
 
-
         const deposit = await prisma.deposit.create({
 
-            data:{
+            data: {
 
-                userId:req.user.id,
+                userId: req.user.id,
 
-                amount:Number(amount),
+                amount: depositAmount,
 
-                method:method || "Manual",
+                method: method || "Manual",
 
-                status:"PENDING"
+                status: "PENDING"
 
             }
 
         });
 
+        return res.status(201).json({
 
-        res.json({
+            success: true,
 
-            message:"Deposit request created",
+            message: "Deposit request submitted successfully.",
 
             deposit
 
         });
 
-
     }
-    catch(error){
 
-        console.log(error);
+    catch (error) {
 
-        res.status(500).json({
+        console.error(error);
 
-            message:"Server error"
+        return res.status(500).json({
+
+            success: false,
+
+            message: "Unable to create deposit."
 
         });
 
@@ -65,184 +88,190 @@ exports.createDeposit = async (req,res)=>{
 };
 
 
+/*==================================
+        USER DEPOSITS
+==================================*/
 
-// GET USER DEPOSITS
+exports.getDeposits = async (req, res) => {
 
-exports.getDeposits = async(req,res)=>{
+    try {
 
-    try{
+        const deposits =
 
+            await prisma.deposit.findMany({
 
-        const deposits = await prisma.deposit.findMany({
+                where: {
 
-            where:{
+                    userId: req.user.id
 
-                userId:req.user.id
+                },
 
-            },
+                orderBy: {
 
-            orderBy:{
+                    createdAt: "desc"
 
-                createdAt:"desc"
+                }
 
-            }
+            });
+
+        return res.status(200).json({
+
+            success: true,
+
+            deposits
 
         });
 
-
-        res.json(deposits);
-
-
     }
-    catch(error){
 
-        console.log(error);
+    catch (error) {
 
-        res.status(500).json({
+        console.error(error);
 
-            message:"Server error"
+        return res.status(500).json({
+
+            success: false,
+
+            message: "Unable to load deposits."
 
         });
 
     }
 
 };
-// COMPLETE DEPOSIT (TEST)
-
-exports.completeDeposit = async (req,res)=>{
-
-    try{
-
-        const { depositId } = req.body;
 
 
-        const deposit = await prisma.deposit.findUnique({
+/*==================================
+        COMPLETE DEPOSIT
+==================================*/
 
-            where:{
-                id:depositId
-            }
+exports.completeDeposit = async (req, res) => {
 
-        });
+    try {
 
+        const {
 
-        if(!deposit){
+            depositId
+
+        } = req.body;
+
+        const deposit =
+
+            await prisma.deposit.findUnique({
+
+                where: {
+
+                    id: depositId
+
+                }
+
+            });
+
+        if (!deposit) {
 
             return res.status(404).json({
 
-                message:"Deposit not found"
+                success: false,
+
+                message: "Deposit not found."
 
             });
 
         }
 
-
-
-        if(deposit.status==="SUCCESS"){
+        if (deposit.status === "SUCCESS") {
 
             return res.status(400).json({
 
-                message:"Deposit already completed"
+                success: false,
+
+                message: "Deposit already completed."
 
             });
 
         }
 
+        await prisma.$transaction([
 
+            prisma.user.update({
 
-        const user = await prisma.user.findUnique({
+                where: {
 
-            where:{
-                id:deposit.userId
-            }
+                    id: deposit.userId
 
-        });
-
-
-
-        if(!user){
-
-            return res.status(404).json({
-
-                message:"User not found"
-
-            });
-
-        }
-
-
-
-        await prisma.user.update({
-
-            where:{
-                id:user.id
-            },
-
-            data:{
-
-                balance:{
-                    increment:deposit.amount
                 },
 
-                deposited:{
-                    increment:deposit.amount
+                data: {
+
+                    balance: {
+
+                        increment: deposit.amount
+
+                    },
+
+                    deposited: {
+
+                        increment: deposit.amount
+
+                    }
+
                 }
 
-            }
+            }),
+
+            prisma.deposit.update({
+
+                where: {
+
+                    id: deposit.id
+
+                },
+
+                data: {
+
+                    status: "SUCCESS"
+
+                }
+
+            }),
+
+            prisma.transaction.create({
+
+                data: {
+
+                    userId: deposit.userId,
+
+                    type: "Deposit",
+
+                    amount: deposit.amount,
+
+                    status: "Completed"
+
+                }
+
+            })
+
+        ]);
+
+        return res.status(200).json({
+
+            success: true,
+
+            message: "Deposit completed successfully."
 
         });
-
-
-
-        await prisma.deposit.update({
-
-            where:{
-                id:deposit.id
-            },
-
-            data:{
-
-                status:"SUCCESS"
-
-            }
-
-        });
-
-
-
-        await prisma.transaction.create({
-
-            data:{
-
-                userId:user.id,
-
-                type:"Deposit",
-
-                amount:deposit.amount,
-
-                status:"Completed"
-
-            }
-
-        });
-
-
-
-        res.json({
-
-            message:"Deposit completed successfully"
-
-        });
-
-
 
     }
-    catch(error){
 
-        console.log(error);
+    catch (error) {
 
-        res.status(500).json({
+        console.error(error);
 
-            message:"Server error"
+        return res.status(500).json({
+
+            success: false,
+
+            message: "Unable to complete deposit."
 
         });
 

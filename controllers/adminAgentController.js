@@ -1,11 +1,56 @@
+/*==================================================
+                SENKU PAY
+          ADMIN AGENT CONTROLLER
+==================================================*/
+
 const { PrismaClient } = require("@prisma/client");
 const bcrypt = require("bcrypt");
 
 const prisma = new PrismaClient();
 
-/*==============================
-        GET ALL AGENTS
-==============================*/
+
+/*==================================================
+                    HELPERS
+==================================================*/
+
+function cleanText(value) {
+
+    return String(value ?? "").trim();
+
+}
+
+
+function normalizeRole(value) {
+
+    const role = cleanText(value).toUpperCase();
+
+    const allowedRoles = [
+
+        "AGENT",
+
+        "SUPPORT_AGENT",
+
+        "FINANCE_AGENT"
+
+    ];
+
+    return allowedRoles.includes(role)
+        ? role
+        : null;
+
+}
+
+
+function normalizeStatus(value) {
+
+    return cleanText(value).toUpperCase();
+
+}
+
+
+/*==================================================
+                GET ALL AGENTS
+==================================================*/
 
 exports.getAgents = async (req, res) => {
 
@@ -13,20 +58,74 @@ exports.getAgents = async (req, res) => {
 
         const agents = await prisma.agent.findMany({
 
+            include: {
+
+                subAgents: {
+
+                    orderBy: {
+
+                        createdAt: "desc"
+
+                    }
+
+                }
+
+            },
+
             orderBy: {
+
                 createdAt: "desc"
+
             }
 
         });
 
-        res.json(agents);
 
-    } catch (err) {
+        const subAgents = agents.flatMap(agent =>
 
-        console.log(err);
+            agent.subAgents.map(subAgent => ({
 
-        res.status(500).json({
-            message: "Server error"
+                ...subAgent,
+
+                parentAgent: agent.name,
+
+                parentAgentUsername: agent.username,
+
+                parentAgentId: agent.id
+
+            }))
+
+        );
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            agents,
+
+            subAgents
+
+        });
+
+    }
+
+    catch (error) {
+
+        console.error(
+
+            "Get agents error:",
+
+            error
+
+        );
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "Unable to load agent accounts."
+
         });
 
     }
@@ -34,79 +133,283 @@ exports.getAgents = async (req, res) => {
 };
 
 
-/*==============================
-        CREATE AGENT
-==============================*/
+/*==================================================
+                CREATE AGENT
+==================================================*/
 
 exports.createAgent = async (req, res) => {
 
     try {
 
-        const {
+        const username = cleanText(
 
-    username,
-    password,
-    name,
-    role
+            req.body.username
 
-} = req.body;
+        ).toLowerCase();
 
-        const exists = await prisma.agent.findUnique({
 
-            where: {
-                username
-            }
+        const password = String(
 
-        });
+            req.body.password || ""
 
-        if (exists) {
+        );
+
+
+        const name = cleanText(
+
+            req.body.name
+
+        );
+
+
+        const email = cleanText(
+
+            req.body.email
+
+        ).toLowerCase();
+
+
+        const note = cleanText(
+
+            req.body.note
+
+        );
+
+
+        const role = normalizeRole(
+
+            req.body.role || "AGENT"
+
+        );
+
+
+        if (name.length < 2) {
 
             return res.status(400).json({
 
-                message: "Username already exists"
+                success: false,
+
+                message: "Enter a valid agent name."
 
             });
 
         }
 
-        const hashedPassword =
-            await bcrypt.hash(password,10);
 
-        await prisma.agent.create({
+        if (
 
-            data:{
+            username.length < 3 ||
 
-    username,
+            !/^[a-zA-Z0-9._-]+$/.test(username)
 
-    password:hashedPassword,
+        ) {
 
-    name,
+            return res.status(400).json({
 
-    role: role || "AGENT",
+                success: false,
 
-    balance:0,
+                message: "Enter a valid agent username."
 
-    status:"ACTIVE"
+            });
 
-}
+        }
+
+
+        if (password.length < 6) {
+
+            return res.status(400).json({
+
+                success: false,
+
+                message:
+                    "Password must contain at least 6 characters."
+
+            });
+
+        }
+
+
+        if (
+
+            email &&
+
+            !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+
+        ) {
+
+            return res.status(400).json({
+
+                success: false,
+
+                message: "Enter a valid email address."
+
+            });
+
+        }
+
+
+        if (!role) {
+
+            return res.status(400).json({
+
+                success: false,
+
+                message: "Invalid agent role."
+
+            });
+
+        }
+
+
+        const duplicateConditions = [
+
+            {
+
+                username
+
+            }
+
+        ];
+
+
+        if (email) {
+
+            duplicateConditions.push({
+
+                email
+
+            });
+
+        }
+
+
+        const existingAgent = await prisma.agent.findFirst({
+
+            where: {
+
+                OR: duplicateConditions
+
+            }
 
         });
 
-        res.json({
 
-            message:"Agent created successfully"
+        if (existingAgent) {
+
+            return res.status(409).json({
+
+                success: false,
+
+                message:
+                    existingAgent.username === username
+                        ? "Agent username already exists."
+                        : "Agent email already exists."
+
+            });
+
+        }
+
+
+        const hashedPassword = await bcrypt.hash(
+
+            password,
+
+            12
+
+        );
+
+
+        const agent = await prisma.agent.create({
+
+            data: {
+
+                username,
+
+                password: hashedPassword,
+
+                name,
+
+                email: email || null,
+
+                note: note || null,
+
+                role,
+
+                balance: 0,
+
+                status: "ACTIVE"
+
+            },
+
+            select: {
+
+                id: true,
+
+                username: true,
+
+                email: true,
+
+                name: true,
+
+                note: true,
+
+                role: true,
+
+                balance: true,
+
+                status: true,
+
+                createdAt: true,
+
+                updatedAt: true
+
+            }
+
+        });
+
+
+        return res.status(201).json({
+
+            success: true,
+
+            message: "Agent account created successfully.",
+
+            agent
 
         });
 
     }
 
-    catch(err){
+    catch (error) {
 
-        console.log(err);
+        console.error(
 
-        res.status(500).json({
+            "Create agent error:",
 
-            message:"Server error"
+            error
+
+        );
+
+
+        if (error.code === "P2002") {
+
+            return res.status(409).json({
+
+                success: false,
+
+                message:
+                    "Agent username or email already exists."
+
+            });
+
+        }
+
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "Unable to create the agent account."
 
         });
 
@@ -115,66 +418,1060 @@ exports.createAgent = async (req, res) => {
 };
 
 
-/*==============================
-        FREEZE / UNFREEZE
-==============================*/
+/*==================================================
+            TOGGLE AGENT STATUS
+==================================================*/
 
-exports.toggleAgentStatus = async (req,res)=>{
+exports.toggleAgentStatus = async (req, res) => {
 
-    try{
+    try {
 
-        const { id } = req.params;
+        const id = cleanText(
 
-        const agent =
-        await prisma.agent.findUnique({
+            req.params.id
 
-            where:{ id }
+        );
+
+
+        const agent = await prisma.agent.findUnique({
+
+            where: {
+
+                id
+
+            }
 
         });
 
-        if(!agent){
+
+        if (!agent) {
 
             return res.status(404).json({
 
-                message:"Agent not found"
+                success: false,
+
+                message: "Agent account not found."
 
             });
 
         }
 
+
         const newStatus =
 
-            agent.status==="ACTIVE"
+            normalizeStatus(agent.status) === "ACTIVE"
 
-            ? "FROZEN"
+                ? "FROZEN"
 
-            : "ACTIVE";
+                : "ACTIVE";
 
-        await prisma.agent.update({
 
-            where:{ id },
+        const updatedAgent = await prisma.agent.update({
 
-            data:{
-                status:newStatus
+            where: {
+
+                id
+
+            },
+
+            data: {
+
+                status: newStatus
+
+            },
+
+            select: {
+
+                id: true,
+
+                username: true,
+
+                name: true,
+
+                email: true,
+
+                role: true,
+
+                status: true,
+
+                balance: true,
+
+                createdAt: true,
+
+                updatedAt: true
+
             }
 
         });
 
-        res.json({
 
-            message:"Status updated"
+        return res.status(200).json({
+
+            success: true,
+
+            message:
+                newStatus === "ACTIVE"
+
+                    ? "Agent account enabled successfully."
+
+                    : "Agent account disabled successfully.",
+
+            agent: updatedAgent
 
         });
 
     }
 
-    catch(err){
+    catch (error) {
 
-        console.log(err);
+        console.error(
 
-        res.status(500).json({
+            "Toggle agent status error:",
 
-            message:"Server error"
+            error
+
+        );
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "Unable to update agent status."
+
+        });
+
+    }
+
+};
+
+
+/*==================================================
+            RESET AGENT PASSWORD
+==================================================*/
+
+exports.resetAgentPassword = async (req, res) => {
+
+    try {
+
+        const id = cleanText(
+
+            req.params.id
+
+        );
+
+
+        const password = String(
+
+            req.body.password || ""
+
+        );
+
+
+        if (password.length < 6) {
+
+            return res.status(400).json({
+
+                success: false,
+
+                message:
+                    "Password must contain at least 6 characters."
+
+            });
+
+        }
+
+
+        const agent = await prisma.agent.findUnique({
+
+            where: {
+
+                id
+
+            }
+
+        });
+
+
+        if (!agent) {
+
+            return res.status(404).json({
+
+                success: false,
+
+                message: "Agent account not found."
+
+            });
+
+        }
+
+
+        const hashedPassword = await bcrypt.hash(
+
+            password,
+
+            12
+
+        );
+
+
+        await prisma.agent.update({
+
+            where: {
+
+                id
+
+            },
+
+            data: {
+
+                password: hashedPassword
+
+            }
+
+        });
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            message: "Agent password reset successfully."
+
+        });
+
+    }
+
+    catch (error) {
+
+        console.error(
+
+            "Reset agent password error:",
+
+            error
+
+        );
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "Unable to reset agent password."
+
+        });
+
+    }
+
+};
+
+
+/*==================================================
+                UPDATE AGENT ROLE
+==================================================*/
+
+exports.updateAgentRole = async (req, res) => {
+
+    try {
+
+        const id = cleanText(
+
+            req.params.id
+
+        );
+
+
+        const role = normalizeRole(
+
+            req.body.role
+
+        );
+
+
+        if (!role) {
+
+            return res.status(400).json({
+
+                success: false,
+
+                message: "Invalid agent role."
+
+            });
+
+        }
+
+
+        const agent = await prisma.agent.findUnique({
+
+            where: {
+
+                id
+
+            }
+
+        });
+
+
+        if (!agent) {
+
+            return res.status(404).json({
+
+                success: false,
+
+                message: "Agent account not found."
+
+            });
+
+        }
+
+
+        const updatedAgent = await prisma.agent.update({
+
+            where: {
+
+                id
+
+            },
+
+            data: {
+
+                role
+
+            },
+
+            select: {
+
+                id: true,
+
+                username: true,
+
+                name: true,
+
+                email: true,
+
+                role: true,
+
+                status: true,
+
+                balance: true,
+
+                createdAt: true,
+
+                updatedAt: true
+
+            }
+
+        });
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            message: "Agent role updated successfully.",
+
+            agent: updatedAgent
+
+        });
+
+    }
+
+    catch (error) {
+
+        console.error(
+
+            "Update agent role error:",
+
+            error
+
+        );
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "Unable to update agent role."
+
+        });
+
+    }
+
+};
+
+
+/*==================================================
+            GET AGENT SUB-AGENTS
+==================================================*/
+
+exports.getAgentSubAgents = async (req, res) => {
+
+    try {
+
+        const agentId = cleanText(
+
+            req.params.id
+
+        );
+
+
+        const agent = await prisma.agent.findUnique({
+
+            where: {
+
+                id: agentId
+
+            },
+
+            select: {
+
+                id: true,
+
+                name: true,
+
+                username: true
+
+            }
+
+        });
+
+
+        if (!agent) {
+
+            return res.status(404).json({
+
+                success: false,
+
+                message: "Agent account not found."
+
+            });
+
+        }
+
+
+        const subAgents = await prisma.subAgent.findMany({
+
+            where: {
+
+                parentAgentId: agentId
+
+            },
+
+            orderBy: {
+
+                createdAt: "desc"
+
+            }
+
+        });
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            agent,
+
+            subAgents
+
+        });
+
+    }
+
+    catch (error) {
+
+        console.error(
+
+            "Get agent sub-agents error:",
+
+            error
+
+        );
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "Unable to load sub-agent accounts."
+
+        });
+
+    }
+
+};
+
+
+/*==================================================
+            TOGGLE SUB-AGENT STATUS
+==================================================*/
+
+exports.toggleSubAgentStatus = async (req, res) => {
+
+    try {
+
+        const id = cleanText(
+
+            req.params.id
+
+        );
+
+
+        const subAgent = await prisma.subAgent.findUnique({
+
+            where: {
+
+                id
+
+            }
+
+        });
+
+
+        if (!subAgent) {
+
+            return res.status(404).json({
+
+                success: false,
+
+                message: "Sub-agent account not found."
+
+            });
+
+        }
+
+
+        const newStatus =
+
+            normalizeStatus(subAgent.status) === "ACTIVE"
+
+                ? "FROZEN"
+
+                : "ACTIVE";
+
+
+        const updatedSubAgent = await prisma.subAgent.update({
+
+            where: {
+
+                id
+
+            },
+
+            data: {
+
+                status: newStatus
+
+            }
+
+        });
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            message:
+                newStatus === "ACTIVE"
+
+                    ? "Sub-agent account enabled successfully."
+
+                    : "Sub-agent account disabled successfully.",
+
+            subAgent: updatedSubAgent
+
+        });
+
+    }
+
+    catch (error) {
+
+        console.error(
+
+            "Toggle sub-agent status error:",
+
+            error
+
+        );
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "Unable to update sub-agent status."
+
+        });
+
+    }
+
+};
+
+
+/*==================================================
+            RESET SUB-AGENT PASSWORD
+==================================================*/
+
+exports.resetSubAgentPassword = async (req, res) => {
+
+    try {
+
+        const id = cleanText(
+
+            req.params.id
+
+        );
+
+
+        const password = String(
+
+            req.body.password || ""
+
+        );
+
+
+        if (password.length < 6) {
+
+            return res.status(400).json({
+
+                success: false,
+
+                message:
+                    "Password must contain at least 6 characters."
+
+            });
+
+        }
+
+
+        const subAgent = await prisma.subAgent.findUnique({
+
+            where: {
+
+                id
+
+            }
+
+        });
+
+
+        if (!subAgent) {
+
+            return res.status(404).json({
+
+                success: false,
+
+                message: "Sub-agent account not found."
+
+            });
+
+        }
+
+
+        const hashedPassword = await bcrypt.hash(
+
+            password,
+
+            12
+
+        );
+
+
+        await prisma.subAgent.update({
+
+            where: {
+
+                id
+
+            },
+
+            data: {
+
+                password: hashedPassword
+
+            }
+
+        });
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            message:
+                "Sub-agent password reset successfully."
+
+        });
+
+    }
+
+    catch (error) {
+
+        console.error(
+
+            "Reset sub-agent password error:",
+
+            error
+
+        );
+
+        return res.status(500).json({
+
+            success: false,
+
+            message:
+                "Unable to reset sub-agent password."
+
+        });
+
+    }
+
+};
+
+
+/*==================================================
+            GET AGENT REQUESTS
+==================================================*/
+
+exports.getAgentRequests = async (req, res) => {
+
+    try {
+
+        const requests = await prisma.agentRequest.findMany({
+
+            include: {
+
+                agent: {
+
+                    select: {
+
+                        id: true,
+
+                        username: true,
+
+                        email: true,
+
+                        name: true,
+
+                        role: true,
+
+                        status: true
+
+                    }
+
+                },
+
+                subAgent: {
+
+                    select: {
+
+                        id: true,
+
+                        username: true,
+
+                        email: true,
+
+                        name: true,
+
+                        role: true,
+
+                        status: true,
+
+                        parentAgentId: true
+
+                    }
+
+                }
+
+            },
+
+            orderBy: {
+
+                createdAt: "desc"
+
+            }
+
+        });
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            requests
+
+        });
+
+    }
+
+    catch (error) {
+
+        console.error(
+
+            "Get agent requests error:",
+
+            error
+
+        );
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "Unable to load agent requests."
+
+        });
+
+    }
+
+};
+
+
+/*==================================================
+            APPROVE AGENT REQUEST
+==================================================*/
+
+exports.approveAgentRequest = async (req, res) => {
+
+    try {
+
+        const id = cleanText(
+
+            req.params.id
+
+        );
+
+
+        const adminNote = cleanText(
+
+            req.body.note
+
+        );
+
+
+        const request = await prisma.agentRequest.findUnique({
+
+            where: {
+
+                id
+
+            }
+
+        });
+
+
+        if (!request) {
+
+            return res.status(404).json({
+
+                success: false,
+
+                message: "Agent request not found."
+
+            });
+
+        }
+
+
+        if (
+
+            normalizeStatus(request.status) !== "PENDING"
+
+        ) {
+
+            return res.status(409).json({
+
+                success: false,
+
+                message:
+                    "This agent request has already been processed."
+
+            });
+
+        }
+
+
+        const updatedRequest = await prisma.agentRequest.update({
+
+            where: {
+
+                id
+
+            },
+
+            data: {
+
+                status: "APPROVED",
+
+                adminNote: adminNote || null,
+
+                processedAt: new Date()
+
+            },
+
+            include: {
+
+                agent: true,
+
+                subAgent: true
+
+            }
+
+        });
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            message:
+                "Agent request approved successfully.",
+
+            request: updatedRequest
+
+        });
+
+    }
+
+    catch (error) {
+
+        console.error(
+
+            "Approve agent request error:",
+
+            error
+
+        );
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "Unable to approve agent request."
+
+        });
+
+    }
+
+};
+
+
+/*==================================================
+            REJECT AGENT REQUEST
+==================================================*/
+
+exports.rejectAgentRequest = async (req, res) => {
+
+    try {
+
+        const id = cleanText(
+
+            req.params.id
+
+        );
+
+
+        const adminNote = cleanText(
+
+            req.body.note
+
+        );
+
+
+        const request = await prisma.agentRequest.findUnique({
+
+            where: {
+
+                id
+
+            }
+
+        });
+
+
+        if (!request) {
+
+            return res.status(404).json({
+
+                success: false,
+
+                message: "Agent request not found."
+
+            });
+
+        }
+
+
+        if (
+
+            normalizeStatus(request.status) !== "PENDING"
+
+        ) {
+
+            return res.status(409).json({
+
+                success: false,
+
+                message:
+                    "This agent request has already been processed."
+
+            });
+
+        }
+
+
+        const updatedRequest = await prisma.agentRequest.update({
+
+            where: {
+
+                id
+
+            },
+
+            data: {
+
+                status: "REJECTED",
+
+                adminNote: adminNote || null,
+
+                processedAt: new Date()
+
+            },
+
+            include: {
+
+                agent: true,
+
+                subAgent: true
+
+            }
+
+        });
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            message:
+                "Agent request rejected successfully.",
+
+            request: updatedRequest
+
+        });
+
+    }
+
+    catch (error) {
+
+        console.error(
+
+            "Reject agent request error:",
+
+            error
+
+        );
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "Unable to reject agent request."
 
         });
 
