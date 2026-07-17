@@ -7,8 +7,9 @@ const { PrismaClient } = require("@prisma/client");
 
 const prisma = new PrismaClient();
 
+
 /*==================================
-        DASHBOARD
+              DASHBOARD
 ==================================*/
 
 exports.getDashboard = async (req, res) => {
@@ -23,7 +24,7 @@ exports.getDashboard = async (req, res) => {
 
             totalTransactions,
 
-            users,
+            admin,
 
             pendingWithdraw,
 
@@ -33,36 +34,68 @@ exports.getDashboard = async (req, res) => {
 
         ] = await Promise.all([
 
+
+            /* Total registered users */
+
             prisma.user.count(),
+
+
+            /* Total registered agents */
 
             prisma.agent.count(),
 
+
+            /* Total transactions */
+
             prisma.transaction.count(),
 
-            prisma.user.findMany({
+
+            /* Real platform/admin balance */
+
+            prisma.admin.findFirst({
+
+                where: {
+
+                    status: "ACTIVE"
+
+                },
 
                 select: {
+
                     balance: true
+
                 }
 
             }),
+
+
+            /* Pending user withdrawal total */
 
             prisma.withdrawRequest.aggregate({
 
                 _sum: {
+
                     amount: true
+
                 },
 
                 where: {
+
                     status: "Pending"
+
                 }
 
             }),
 
+
+            /* Completed deposit total */
+
             prisma.transaction.aggregate({
 
                 _sum: {
+
                     amount: true
+
                 },
 
                 where: {
@@ -75,10 +108,15 @@ exports.getDashboard = async (req, res) => {
 
             }),
 
+
+            /* Completed withdrawal total */
+
             prisma.transaction.aggregate({
 
                 _sum: {
+
                     amount: true
+
                 },
 
                 where: {
@@ -93,17 +131,17 @@ exports.getDashboard = async (req, res) => {
 
         ]);
 
-        const totalBalance = users.reduce(
 
-            (sum, user) =>
+        /*
+         * Dashboard balance now comes directly
+         * from the Admin table.
+         */
 
-                sum + Number(user.balance || 0),
+        const totalBalance =
+            Number(admin?.balance || 0);
 
-            0
 
-        );
-
-        res.status(200).json({
+        return res.status(200).json({
 
             success: true,
 
@@ -119,15 +157,21 @@ exports.getDashboard = async (req, res) => {
 
                 pendingWithdraw:
 
-                    pendingWithdraw._sum.amount || 0,
+                    Number(
+                        pendingWithdraw._sum.amount || 0
+                    ),
 
                 totalDeposits:
 
-                    completedDeposits._sum.amount || 0,
+                    Number(
+                        completedDeposits._sum.amount || 0
+                    ),
 
                 totalWithdraws:
 
-                    completedWithdraws._sum.amount || 0
+                    Number(
+                        completedWithdraws._sum.amount || 0
+                    )
 
             }
 
@@ -145,7 +189,8 @@ exports.getDashboard = async (req, res) => {
 
         );
 
-        res.status(500).json({
+
+        return res.status(500).json({
 
             success: false,
 
