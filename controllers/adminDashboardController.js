@@ -137,8 +137,11 @@ exports.getDashboard = async (req, res) => {
          * from the Admin table.
          */
 
-        const totalBalance =
-            Number(admin?.balance || 0);
+        const adminBalance =
+    Number(admin?.balance || 0);
+
+const totalBalance =
+    Number(admin?.balance || 0);
 
 
         return res.status(200).json({
@@ -147,15 +150,17 @@ exports.getDashboard = async (req, res) => {
 
             dashboard: {
 
-                totalUsers,
+    totalUsers,
 
-                totalAgents,
+    totalAgents,
 
-                totalTransactions,
+    totalTransactions,
 
-                totalBalance,
+    totalBalance,
 
-                pendingWithdraw:
+    adminBalance,
+
+    pendingWithdraw:
 
                     Number(
                         pendingWithdraw._sum.amount || 0
